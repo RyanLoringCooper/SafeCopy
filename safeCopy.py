@@ -4,6 +4,7 @@ copyTo = False
 wildcard = False
 
 def parseArguments():
+    #TODO need to use narg on srcPath
     parser = argparse.ArgumentParser(description="Will copy files if they don't exist in the destination and will diff them if they do exist in the destination.")
     parser.add_argument('srcPath', metavar='srcPath', type=str, help="the path to the file to be copied")
     parser.add_argument('dstPath', metavar='dstPath', type=str, help="the path to copy the files to")
