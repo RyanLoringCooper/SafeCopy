@@ -1,6 +1,7 @@
 import argparse, os, sys, errno, shutil, subprocess
 
 copyTo = False
+wildcard = False
 
 def parseArguments():
     parser = argparse.ArgumentParser(description="Will copy files if they don't exist in the destination and will diff them if they do exist in the destination.")
@@ -8,6 +9,7 @@ def parseArguments():
     parser.add_argument('dstPath', metavar='dstPath', type=str, help="the path to copy the files to")
     parser.add_argument('-r', action='store_true', help="use this flag to copy all files in the srcPath")
     args = vars(parser.parse_args())
+    print(str(args))
     if args['dstPath'][-1] == '*':
         sys.stderr.write("dstPath has a wildcard and is therefore not understood\n")
         parser.print_help()
@@ -26,6 +28,15 @@ def getPathForCopyTo(s, dstPath):
     else:
         return os.path.join(dstPath, s)
 
+def createDirectory(pathToCreate):
+    try:
+        os.makedirs(pathToCreate)
+    except OSError as e:
+        if e.errno == errno.ENOTDIR:
+            sys.stderr.write("The directory you tried to copy files into was not a directory. The copy failed.\n")
+        elif e.errno != errno.EEXIST:
+            raise
+
 def createDirectories(dirsToCopy, dstPath):
     notCreated = []
     if not isinstance(dirsToCopy, list) and not isinstance(dirsToCopy, tuple):
@@ -36,13 +47,7 @@ def createDirectories(dirsToCopy, dstPath):
         else:
             pathToCreate = os.path.join(dstPath, d)
         if not os.path.exists(pathToCreate):
-            try:
-                os.makedirs(pathToCreate)
-            except OSError as e:
-                if e.errno == errno.ENOTDIR:
-                    sys.stderr.write("The directory you tried to copy files into was not a directory. The copy failed.\n")
-                elif e.errno != errno.EEXIST:
-                    raise
+            createDirectory(pathToCreate)
         else:
             notCreated.append((d,pathToCreate))
     return notCreated
@@ -53,6 +58,11 @@ def copyFile(s, locToCreate):
     except OSError as e:
         sys.stderr.write(str(e) + "\n")
 
+'''
+Copies all files into the dstPath
+    @param srcs a list of paths to files to copy
+    @param dstPath the top directory to put the paths of the files into
+'''
 def copyFiles(srcs, dstPath):
     notCreated = []
     if not isinstance(srcs, list) and not isinstance(srcs, tuple):
@@ -68,6 +78,12 @@ def copyFiles(srcs, dstPath):
             notCreated.append((s, locToCreate))
     return notCreated
 
+'''
+This function will run diff on all of the conflicting files and print the results to stdout
+    @param conflicts is a list of tuples
+        where the first element of each tuple is the source file that conflicted
+        and the second element is the destination file that conflicted
+'''
 def getDiffs(conflicts):
     for c in conflicts:
         p = subprocess.Popen(['diff', c[0], c[1]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -91,9 +107,17 @@ def recursiveCopy(srcPath, dstPath):
     filesToCopy = []
     for dirPath, dirNames, fileNames in os.walk(srcPath):
         for d in dirNames:
-            dirsToCopy.append(os.path.join(dirPath, d))
+            if wildcard:
+                dToCopy = os.path.join(dirPath[len(srcPath):], d)
+            else:
+                dToCopy = os.path.join(dirPath, d)
+            dirsToCopy.append(dToCopy)
         for f in fileNames:
-            filesToCopy.append(os.path.join(dirPath, f))
+            if wildcard:
+                fToCopy = os.path.join(dirPath[len(srcPath):], f)
+            else:
+                fToCopy = os.path.join(dirPath, f)
+            filesToCopy.append(fToCopy)
     notCreatedDirs = createDirectories(dirsToCopy, dstPath)
     notCreatedFiles = copyFiles(filesToCopy, dstPath)
     if(len(notCreatedFiles) > 0):
@@ -105,7 +129,10 @@ def recursiveCopy(srcPath, dstPath):
 def singleCopy(srcPath, dstPath):
     if os.path.isdir(srcPath):
         print("Only copying directory, but not its contents. To copy contents, use the -r flag.")
-        createDirectories(srcPath, dstPath)
+        if os.path.exists(dstPath):
+            createDirectories(srcPath, dstPath)
+        else:
+            createDirectory(dstPath)
     else:
         if os.path.exists(dstPath):
             copyFiles(srcPath, dstPath)
@@ -116,6 +143,9 @@ if __name__ == "__main__":
     args = parseArguments()
     if not os.path.exists(args['dstPath']):
         copyTo = True
+    if args['srcPath'][-1] == '*':
+        args['srcPath'] = args['srcPath'][:-1]
+        wildcard = True
     if args['r']:
         recursiveCopy(args['srcPath'], args['dstPath'])
     else:
